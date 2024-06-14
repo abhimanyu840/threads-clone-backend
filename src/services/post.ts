@@ -3,12 +3,13 @@
 import { z } from "zod";
 import { prismaClient } from "../lib/db";
 import { postSchema } from "../zod/postSchema";
+import redisClient from "../redisClient";
 
 export type CreatePostPayload = z.infer<typeof postSchema>
 
 class PostService {
 
-    public static createPost(payload: CreatePostPayload) {
+    public static async createPost(payload: CreatePostPayload) {
         try {
             let res = postSchema.safeParse(payload);
             if (!res.success) {
@@ -17,7 +18,7 @@ class PostService {
             if (res.success) {
 
                 const { title, authorId, content, image } = res.data;
-
+                await redisClient.del(`posts`)
                 return prismaClient.post.create({
                     data: {
                         title,
@@ -39,8 +40,10 @@ class PostService {
         }
     }
 
-    public static getPosts() {
-        return prismaClient.post.findMany({
+    public static async getPosts() {
+        const cachedPost = await redisClient.get(`posts`);
+        if (cachedPost) return JSON.parse(cachedPost);
+        let fetchedPost = await prismaClient.post.findMany({
             include: {
                 author: true,
                 likedBy: true,
@@ -48,9 +51,15 @@ class PostService {
                 Comments: true
             }
         });
+        await redisClient.set(`posts`, JSON.stringify(fetchedPost));
+        return fetchedPost;
     }
 
     private static async findPost(postId: string) {
+        const cache = await redisClient.get(`posts`);
+        const cachedPost = cache && await JSON.parse(cache);
+        const thisPost = cachedPost.id === postId;
+        if (thisPost) return thisPost;
         return prismaClient.post.findUnique({
             where: {
                 id: postId
@@ -65,7 +74,9 @@ class PostService {
 
     public static async addLike(postId: string, userId: string) {
         let post = await this.findPost(postId);
+
         if (post) {
+            await redisClient.del(`posts`)
             return prismaClient.post.update({
                 where: { id: postId },
                 data: {
@@ -105,7 +116,11 @@ class PostService {
         }
     }
 
-    public static getPostById(id: string) {
+    public static async getPostByAuthorId(id: string) {
+        const cache = await redisClient.get(`posts`);
+        const cachedPost = cache && await JSON.parse(cache);
+        const thisPost = cachedPost.authorId === id;
+        if (thisPost) return thisPost;
         return prismaClient.post.findMany({
             where: { authorId: id },
             include: {

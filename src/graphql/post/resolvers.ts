@@ -5,16 +5,17 @@ import PostService from "../../services/post";
 const queries = {
     allPosts: async () => {
         const posts = await PostService.getPosts();
-        return posts.map(post => ({
+        return posts.map((post: any) => ({
             ...post,
-            createdAt: post.createdAt.toISOString(),
+            // createdAt: post.createdAt.toISOString(),
+            createdAt: post.createdAt,
             likedBy: post.likedBy || [],
             repostedBy: post.repostedBy || [],
             comments: post.Comments || []  // Ensure comments is never null
         }));
     },
     post: async (_: any, { id }: { id: string }) => {
-        const post = await PostService.getPostById(id);
+        const post = await PostService.getPostByAuthorId(id);
         // return {
         //     ...post,
         //     createdAt: post!.createdAt.toISOString(),

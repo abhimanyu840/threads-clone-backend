@@ -3,6 +3,7 @@ import { userSchema } from "../zod/userSchema";
 import { prismaClient } from "../lib/db";
 import bcrypt from 'bcryptjs';
 import JWT from "jsonwebtoken";
+import redisClient from "../redisClient";
 
 export type CreateUserPayload = z.infer<typeof userSchema>;
 
@@ -17,11 +18,20 @@ export interface UpdateUserPayload {
 
 class UserService {
 
-    public static getUserByID(id: string) {
-        return prismaClient.user.findUnique({ where: { id } });
+    public static async getUserByID(id: string) {
+        const cachedUser = await redisClient.get(`user:${id}`);
+        if (cachedUser) {
+            return JSON.parse(cachedUser);
+        } else {
+            let user = await prismaClient.user.findUnique({ where: { id } });
+            if (user) {
+                await redisClient.set(`user:${id}`, JSON.stringify(user));
+                return user;
+            }
+        }
     }
 
-    public static getUserByEmail(email: string) {
+    private static getUserByEmail(email: string) {
         return prismaClient.user.findUnique({ where: { email } });
     }
 
